@@ -1,3 +1,5 @@
+local npcPed = nil
+
 -- Evento para teletransportar e congelar o veículo do jogador
 RegisterNetEvent("outrun:teleportAndFreeze")
 AddEventHandler("outrun:teleportAndFreeze", function(teleportCoords)
@@ -49,7 +51,8 @@ AddEventHandler("outrun:startRace", function()
         -- Notifica o jogador que a corrida começou
         ShowNotification("A corrida começou! Boa sorte!")
 
-        --TODO: Chamar meotodo que vai gerenciar a corrida
+        --TODO: Chamar método que vai gerenciar a corrida
+        TriggerServerEvent("outrun:outrunRulesNpc")
     end
 end)
 
@@ -59,6 +62,164 @@ function ShowNotification(text)
     AddTextComponentSubstringPlayerName(text)
     DrawNotification(false, true)
 end
+
+
+local npcPed = nil -- Variável para armazenar o NPC criado no cliente
+
+-- Evento para criar o NPC
+RegisterNetEvent("outrun:spawnNPC")
+AddEventHandler("outrun:spawnNPC", function()
+    -- Defina o modelo do veículo NPC
+    local npcVehicleModel = GetHashKey("sultanrs")
+
+    -- Carrega o modelo do veículo
+    RequestModel(npcVehicleModel)
+    while not HasModelLoaded(npcVehicleModel) do
+        Citizen.Wait(0)
+    end
+
+    -- Coordenadas para spawnar o NPC (ajuste conforme necessário)
+    local spawnCoords = vector3(-2309.0541992188, 449.82046508789, 173.66809082031)
+    local spawnHeading = 0.0 -- Direção do veículo
+
+    -- Cria o veículo NPC
+    local npcVehicle = CreateVehicle(npcVehicleModel, spawnCoords.x, spawnCoords.y, spawnCoords.z, spawnHeading, true, false)
+
+    -- Define o veículo como uma entidade de missão para evitar que desapareça
+    SetEntityAsMissionEntity(npcVehicle, true, true)
+
+    -- Cria um ped dentro do veículo NPC
+    local npcPedModel = GetHashKey("a_m_y_business_01")
+    RequestModel(npcPedModel)
+    while not HasModelLoaded(npcPedModel) do
+        Citizen.Wait(0)
+    end
+
+    npcPed = CreatePedInsideVehicle(npcVehicle, 4, npcPedModel, -1, true, false)
+
+    -- Configurações adicionais para o ped NPC
+    SetEntityInvincible(npcPed, true)
+    SetBlockingOfNonTemporaryEvents(npcPed, true)
+
+    -- Trava o veículo NPC para que ele fique parado
+    FreezeEntityPosition(npcVehicle, true)
+
+    -- Notifica o jogador que o NPC foi spawnado
+    ShowNotification("NPC spawnado e pronto.")
+end)
+
+-- Cliente responde ao servidor com as coordenadas do NPC
+RegisterNetEvent("outrun:requestNPCCoords")
+AddEventHandler("outrun:requestNPCCoords", function()
+    if npcPed ~= nil then
+        -- Obtém as coordenadas do NPC
+        local npcCoords = GetEntityCoords(npcPed)
+        
+        -- Envia as coordenadas de volta ao servidor
+        TriggerServerEvent("outrun:receiveNPCCoords", npcCoords.x, npcCoords.y, npcCoords.z)
+    else
+        -- Caso o NPC não esteja disponível, envia uma mensagem ao servidor
+        TriggerServerEvent("outrun:receiveNPCCoords", nil, nil, nil)
+    end
+end)
+
+-- Cliente responde ao servidor com as coordenadas do jogador
+RegisterNetEvent("outrun:requestPlayerCoords")
+AddEventHandler("outrun:requestPlayerCoords", function()
+    local playerPed = PlayerPedId()
+    local playerCoords = GetEntityCoords(playerPed)
+
+    -- Envia as coordenadas do jogador de volta ao servidor
+    TriggerServerEvent("outrun:receivePlayerCoords", playerCoords.x, playerCoords.y, playerCoords.z)
+end)
+
+-- Cliente responde ao servidor com a rotação do jogador
+RegisterNetEvent("outrun:requestPlayerRotation")
+AddEventHandler("outrun:requestPlayerRotation", function()
+    -- Obtém o Ped do jogador local
+    local playerPed = PlayerPedId()
+    -- Obtém a rotação do jogador no eixo Z (Yaw)
+    local playerRotation = GetEntityRotation(playerPed, 2).z
+    -- Envia a rotação do jogador de volta ao servidor
+    TriggerServerEvent("outrun:receivePlayerRotation", playerRotation)
+end)
+
+-- Cliente responde ao servidor com a rotação do NPC
+RegisterNetEvent("outrun:requestNPCrotation")
+AddEventHandler("outrun:requestNPCrotation", function()
+    if npcPed ~= nil then
+        -- Obtém a rotação do NPC no eixo Z (Yaw)
+        local npcRotation = GetEntityRotation(npcPed, 2).z
+        -- Envia a rotação do NPC de volta ao servidor
+        TriggerServerEvent("outrun:receiveNPCRotation", npcRotation)
+    else
+        -- Caso o NPC não esteja disponível, envia nil ao servidor
+        TriggerServerEvent("outrun:receiveNPCRotation", nil)
+    end
+end)
+
+-- Evento para indicar que o NPC está liderando
+RegisterNetEvent("outrun:npcLeader")
+AddEventHandler("outrun:npcLeader", function()
+    -- Aqui você pode exibir uma mensagem ou tomar alguma ação quando o NPC está na liderança
+    ShowTextOnScreen("Você perdeu a liderança!", 5000)
+end)
+
+-- Evento para indicar que o jogador está liderando
+RegisterNetEvent("outrun:playerLeader")
+AddEventHandler("outrun:playerLeader", function()
+    -- Aqui você pode exibir uma mensagem ou tomar alguma ação quando o jogador está na liderança
+    ShowTextOnScreen("Você é o líder da corrida!")
+end)
+
+function ShowTextOnScreen(text)
+     -- Inicia um thread para exibir o texto
+     Citizen.CreateThread(function()
+        -- Tempo para exibir a mensagem
+        local displayTime = 1200 -- 1.2 segundos
+        local endTime = GetGameTimer() + displayTime
+        
+        while GetGameTimer() < endTime do
+            -- Configura o texto
+            SetTextFont(4) -- Fonte do texto (4 = fonte de "WASTED")
+            SetTextScale(1.0, 2.0) -- Escala do texto (ajuste conforme necessário)
+            SetTextColour(255, 0, 0, 255) -- Cor do texto (vermelho)
+            SetTextDropShadow()
+            SetTextOutline()
+            SetTextCentre(true) -- Centraliza o texto
+
+            -- Adiciona o texto à tela
+            SetTextEntry("STRING")
+            AddTextComponentString(text)
+            DrawText(0.5, 0.4) -- Coordenadas (0.5, 0.4) para o centro alto da tela
+
+            -- Aguarda para manter o texto visível
+            Citizen.Wait(0)
+        end
+
+        -- Após o tempo, você pode limpar ou substituir o texto se necessário
+        ClearPrints() -- Limpa qualquer mensagem anterior, se necessário
+    end)
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------------------------
 
 -- Registra o comando /coords para obter as coordenadas do jogador
 RegisterCommand("coords", function()
@@ -77,7 +238,6 @@ RegisterCommand("coords", function()
     -- Também imprime as coordenadas no console do cliente (F8)
     print("Suas coordenadas atuais são: X: " .. x .. " | Y: " .. y .. " | Z: " .. z)
 end, false) -- Define que qualquer jogador pode executar este comando
-
 
 -- Variável para rastrear o estado do no-clip
 local noclip = false
@@ -162,4 +322,6 @@ function getCamDirection()
 
     return x, y, z
 end
+
+
 
